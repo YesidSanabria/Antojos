@@ -5,11 +5,148 @@
     android:layout_height="match_parent"
     tools:context=".AgregarProductos">
 
-    <TextView
-        android:id="@+id/textView2"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Procesi"
-        tools:layout_editor_absoluteX="170dp"
-        tools:layout_editor_absoluteY="338dp" />
+    <TableLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" >
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/textView3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Agregar un producto" />
+            </LinearLayout>
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/Backgroud">
+
+            <TextView
+                android:id="@+id/textView2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Producto Id"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/editTextId"
+                android:layout_width="183dp"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="Escribir un id"
+                android:textColor="@color/Transparente" />
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/Backgroud">
+
+            <TextView
+                android:id="@+id/textView4"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nombre"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/editTextNombre"
+                android:layout_width="183dp"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="Escribir nombre"
+                android:textColor="@color/Transparente" />
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/Backgroud">
+
+            <TextView
+                android:id="@+id/textView5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Proveedor"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/editTextProveedor"
+                android:layout_width="183dp"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="Escribir proveedor"
+                android:textColor="@color/Transparente" />
+
+            <Button
+                android:id="@+id/btnAgregarProductobd"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="Agregar" />
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/Backgroud">
+
+            <TextView
+                android:id="@+id/textView6"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Precio Unitario"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/editTextPrecioUnitario"
+                android:layout_width="183dp"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="Escribir precio"
+                android:textColor="@color/Transparente" />
+
+        </TableRow>
+
+        <TableRow
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/Backgroud">
+
+            <TextView
+                android:id="@+id/textView7"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cantidad producto"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/editTextCantidadProductos"
+                android:layout_width="183dp"
+                android:layout_height="wrap_content"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="Escribir cantidad"
+                android:textColor="@color/Transparente" />
+
+        </TableRow>
+    </TableLayout>
+
 </LinearLayout>

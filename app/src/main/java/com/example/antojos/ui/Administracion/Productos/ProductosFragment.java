@@ -53,11 +53,11 @@ public class ProductosFragment extends Fragment {
             }
         });
         return vista;*/
-        return inflater.inflate(R.layout.fragment_productos,container,false);
+        return inflater.inflate(R.layout.fragment_Productos,container,false);
 
     }
 
-    @Override
+   /* @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
@@ -79,5 +79,5 @@ public class ProductosFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
-    }
+    }*/
 }

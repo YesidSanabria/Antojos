@@ -63,7 +63,6 @@ if (Object.keys(poolConfig).length > 0) {
   console.warn("WARNING: El pool de la base de datos no se inicializó debido a falta de configuración.");
 }
 
-// Exportar un objeto que pueda manejar el caso de que el pool no se haya inicializado
 module.exports = {
   query: (text, params) => {
     if (!pool) {
@@ -71,7 +70,6 @@ module.exports = {
     }
     return pool.query(text, params);
   },
-  // Exportar el pool directamente puede ser útil para transacciones o características más avanzadas de pg
-  // Asegúrate de manejar el caso donde 'pool' podría ser undefined si así lo prefieres.
+
   getPool: () => pool,
 };

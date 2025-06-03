@@ -1,0 +1,19 @@
+# docker-compose.yml (colócalo en la raíz de tu proyecto)
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: antojos_postgres_db
+    environment:
+      POSTGRES_USER: admin_antojos # Define el usuario de la base de datos
+      POSTGRES_PASSWORD: AnTOJOS123PAN# # ¡¡CAMBIA ESTO por una contraseña fuerte y segura!!
+      POSTGRES_DB: antojos_dev_db # Define el nombre de la base de datos que se creará
+    ports:
+      - "5432:5432" # Mapea el puerto 5432 del contenedor al puerto 5432 de tu máquina
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Crea un volumen para que los datos persistan
+    restart: unless-stopped # Reinicia el contenedor a menos que lo detengas manually
+
+volumes:
+  postgres_data: # Define el volumen llamado 'postgres_data'

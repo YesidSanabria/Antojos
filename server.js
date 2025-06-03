@@ -22,13 +22,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // --- Rutas de API ---
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: "UP", message: "El servidor backend está saludable!" });
+});
+
 // GET: Obtener todos los productos
-app.get('/api/health', async  (req, res) => {
+app.get('/api/productos', async (req, res) => {
   try {
-    const {rows} = await db.query('SELECT * FROM productos ORDER BY nombre ASC')
-  }catch (err){
+    const { rows } = await db.query('SELECT * FROM productos ORDER BY nombre ASC');
+    res.status(200).json(rows);
+  } catch (err) {
     console.error("Error al obtener productos:", err.stack);
-    res.status(500).json({ status: "UP", message: "El servidor backend está saludable!" });
+    res.status(500).json({ error: 'Error interno del servidor al obtener productos', details: err.message });
   }
 });
 

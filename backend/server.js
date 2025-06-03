@@ -17,9 +17,6 @@ const io = new Server(server, {
   cors: corsOptions
 });
 
-const PORT = process.env.PORT || 3001;
-
-
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -43,6 +40,7 @@ io.on('connection', (socket) => {
 });
 
 // --- Iniciar el servidor ---
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
+  console.log(`Servidor backend corriendo en el puerto ${PORT}`);
 });

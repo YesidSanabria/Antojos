@@ -47,7 +47,7 @@ app.get('/api/db-test', async (req, res) => {
       console.warn("Advertencia en /api/db-test: La consulta a la BD fue exitosa pero no devolvió filas o el formato es inesperado.");
       res.status(200).json({ dbMessage: "Consulta a BD aparentemente exitosa, pero sin mensaje de retorno esperado." });
     }
-  } catch (err) { // 'err' está definido aquí
+  } catch (err) {
     console.error("Error crítico en la ruta /api/db-test:", err.stack);
     res.status(500).json({ error: 'Error al conectar o consultar la base de datos', details: err.message });
   }
@@ -57,14 +57,17 @@ app.get('/api/db-test', async (req, res) => {
 
 // CREATE: Añadir un nuevo producto
 app.post('/api/productos', async (req, res) => {
+  // Extraer los datos del cuerpo de la solicitud (sin imagen_url)
   const { nombre, descripcion, precio, categoria, disponible, stock_quantity } = req.body;
+
   if (!nombre || precio === undefined) {
     return res.status(400).json({ error: 'Los campos nombre y precio son obligatorios.' });
   }
+
   try {
     const queryText = `
       INSERT INTO productos (nombre, descripcion, precio, categoria, disponible, stock_quantity) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      VALUES ($1, $2, $3, $4, $5, $6) 
       RETURNING *;
     `;
     const values = [
@@ -75,9 +78,10 @@ app.post('/api/productos', async (req, res) => {
       disponible === undefined ? true : disponible,
       stock_quantity === undefined ? 0 : parseInt(stock_quantity)
     ];
+    
     const { rows } = await db.query(queryText, values);
     res.status(201).json(rows[0]);
-  } catch (err) { // 'err' está definido aquí
+  } catch (err) {
     console.error("Error al crear el producto:", err.stack);
     if (err.code === '23505' && err.constraint === 'productos_nombre_key') {
       return res.status(409).json({ error: 'Ya existe un producto con ese nombre.' });
@@ -91,7 +95,7 @@ app.get('/api/productos', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM productos ORDER BY nombre ASC');
     res.status(200).json(rows);
-  } catch (err) { // 'err' está definido aquí
+  } catch (err) {
     console.error("Error al obtener productos:", err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener productos', details: err.message });
   }
@@ -106,7 +110,7 @@ app.get('/api/productos/:id', async (req, res) => {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
     res.status(200).json(rows[0]);
-  } catch (err) { // 'err' está definido aquí
+  } catch (err) {
     console.error(`Error al obtener el producto con ID ${id}:`, err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener el producto', details: err.message });
   }
@@ -115,10 +119,13 @@ app.get('/api/productos/:id', async (req, res) => {
 // UPDATE: Actualizar un producto existente por ID
 app.put('/api/productos/:id', async (req, res) => {
   const { id } = req.params;
+  // Extraer los datos del cuerpo de la solicitud (sin imagen_url)
   const { nombre, descripcion, precio, categoria, disponible, stock_quantity } = req.body;
+
   if (!nombre || precio === undefined) {
     return res.status(400).json({ error: 'Los campos nombre y precio son obligatorios para la actualización.' });
   }
+
   try {
     const queryText = `
       UPDATE productos 
@@ -138,16 +145,18 @@ app.put('/api/productos/:id', async (req, res) => {
         descripcion, 
         parseFloat(precio), 
         categoria, 
-        disponible,
-        parseInt(stock_quantity), 
+        disponible === undefined ? true : disponible,
+        stock_quantity === undefined ? 0 : parseInt(stock_quantity), 
         id
     ];
+    
     const { rows } = await db.query(queryText, values);
+    
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Producto no encontrado para actualizar' });
     }
     res.status(200).json(rows[0]);
-  } catch (err) { // 'err' está definido aquí
+  } catch (err) {
     console.error(`Error al actualizar el producto con ID ${id}:`, err.stack);
     if (err.code === '23505' && err.constraint === 'productos_nombre_key') {
       return res.status(409).json({ error: 'Ya existe otro producto con ese nombre.' });
@@ -164,8 +173,8 @@ app.delete('/api/productos/:id', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Producto no encontrado para eliminar' });
     }
-    res.status(204).send(); // 204 No Content es apropiado para DELETE exitoso
-  } catch (err) { // 'err' está definido aquí
+    res.status(204).send(); 
+  } catch (err) {
     console.error(`Error al eliminar el producto con ID ${id}:`, err.stack);
     if (err.code === '23503') { 
         return res.status(409).json({ error: 'No se puede eliminar el producto porque está referenciado en items_pedido existentes.', constraint: err.constraint });

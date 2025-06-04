@@ -363,6 +363,228 @@ app.delete('/api/mesas/:id', async (req, res) => {
 });
 console.log("INFO: Rutas CRUD para mesas configuradas.");
 
+// --- CRUD para Pedidos ---
+console.log("INFO: Configurando rutas CRUD para pedidos...");
+
+// CREATE: Registrar un nuevo pedido
+app.post('/api/pedidos', async (req, res) => {
+  const { mesa_id, notas_cliente, items } = req.body;
+  console.log(`INFO: Petición POST recibida en /api/pedidos desde ${req.ip} con body:`, req.body);
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'El pedido debe contener al menos un item.' });
+  }
+
+  // Validar cada item
+  for (const item of items) {
+    if (!item.producto_id || !item.cantidad || parseInt(item.cantidad) <= 0) {
+      return res.status(400).json({ error: 'Cada item debe tener un producto_id y una cantidad válida (mayor a 0).' });
+    }
+  }
+
+  const client = await db.getPool().connect(); // Obtener un cliente del pool para la transacción
+
+  try {
+    await client.query('BEGIN'); // Iniciar transacción
+
+    // 1. Insertar en la tabla 'pedidos'
+    const pedidoQueryText = `
+      INSERT INTO pedidos (mesa_id, estado, notas_cliente) 
+      VALUES ($1, $2, $3) 
+      RETURNING id, estado, created_at;
+    `;
+    // Estado inicial 'pendiente'
+    const pedidoValues = [mesa_id ? parseInt(mesa_id) : null, 'pendiente', notas_cliente];
+    const pedidoResult = await client.query(pedidoQueryText, pedidoValues);
+    const nuevoPedidoId = pedidoResult.rows[0].id;
+    let totalPedidoCalculado = 0;
+
+    console.log(`INFO: Pedido base creado con ID: ${nuevoPedidoId}`);
+
+    // 2. Insertar cada item en 'items_pedido'
+    const itemsInsertados = [];
+    for (const item of items) {
+      // Obtener el precio actual del producto
+      const productoResult = await client.query('SELECT precio, nombre FROM productos WHERE id = $1 AND disponible = TRUE', [item.producto_id]);
+      if (productoResult.rows.length === 0) {
+        throw new Error(`Producto con ID ${item.producto_id} no encontrado o no disponible.`);
+      }
+      const precioUnitario = parseFloat(productoResult.rows[0].precio);
+      const nombreProducto = productoResult.rows[0].nombre; // Para la respuesta
+      const cantidad = parseInt(item.cantidad);
+      const subtotal = cantidad * precioUnitario;
+      totalPedidoCalculado += subtotal;
+
+      const itemQueryText = `
+        INSERT INTO items_pedido (pedido_id, producto_id, cantidad, precio_unitario_en_pedido, subtotal, notas_item)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *;
+      `;
+      const itemValues = [nuevoPedidoId, item.producto_id, cantidad, precioUnitario, subtotal, item.notas_item];
+      const itemResult = await client.query(itemQueryText, itemValues);
+      itemsInsertados.push({
+          ...itemResult.rows[0],
+          nombre_producto: nombreProducto // Añadir nombre para la respuesta
+      });
+      console.log(`INFO: Item insertado para pedido ID ${nuevoPedidoId}: producto ID ${item.producto_id}, cantidad ${cantidad}`);
+    }
+
+    // 3. (Opcional pero recomendado) Actualizar el total_pedido en la tabla 'pedidos'
+    await client.query('UPDATE pedidos SET total_pedido = $1 WHERE id = $2', [totalPedidoCalculado, nuevoPedidoId]);
+    console.log(`INFO: Total del pedido ID ${nuevoPedidoId} actualizado a: ${totalPedidoCalculado}`);
+
+    await client.query('COMMIT'); // Confirmar transacción
+
+    // (Más adelante) Emitir evento Socket.IO
+    // io.emit('nuevo_pedido_cocina', { ...pedidoResult.rows[0], id: nuevoPedidoId, total_pedido: totalPedidoCalculado, items: itemsInsertados });
+
+    res.status(201).json({ 
+        ...pedidoResult.rows[0], 
+        id: nuevoPedidoId, 
+        mesa_id: mesa_id ? parseInt(mesa_id) : null,
+        notas_cliente: notas_cliente,
+        total_pedido: totalPedidoCalculado, 
+        items: itemsInsertados 
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK'); // Revertir transacción en caso de error
+    console.error("ERROR al crear el pedido (transacción revertida):", err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al crear el pedido', details: err.message });
+  } finally {
+    client.release(); // Liberar el cliente de vuelta al pool
+    console.log("INFO: Cliente de base de datos liberado.");
+  }
+});
+
+// READ: Obtener todos los pedidos (con sus items y detalles de productos)
+app.get('/api/pedidos', async (req, res) => {
+  console.log(`INFO: Petición GET recibida en /api/pedidos desde ${req.ip}`);
+  try {
+    // Esta consulta es más compleja para traer los datos relacionados
+    const queryText = `
+      SELECT 
+        p.id as pedido_id, 
+        p.mesa_id, 
+        m.numero_mesa,
+        p.estado, 
+        p.total_pedido,
+        p.notas_cliente,
+        p.created_at as pedido_creado_en,
+        json_agg(
+          json_build_object(
+            'item_id', ip.id,
+            'producto_id', ip.producto_id,
+            'nombre_producto', prod.nombre,
+            'cantidad', ip.cantidad,
+            'precio_unitario_en_pedido', ip.precio_unitario_en_pedido,
+            'subtotal', ip.subtotal,
+            'notas_item', ip.notas_item
+          ) ORDER BY prod.nombre ASC
+        ) FILTER (WHERE ip.id IS NOT NULL) as items -- Usar FILTER para manejar pedidos sin items (aunque no debería pasar con la lógica de creación)
+      FROM pedidos p
+      LEFT JOIN mesas m ON p.mesa_id = m.id
+      LEFT JOIN items_pedido ip ON p.id = ip.pedido_id
+      LEFT JOIN productos prod ON ip.producto_id = prod.id
+      GROUP BY p.id, m.numero_mesa
+      ORDER BY p.created_at DESC;
+    `;
+    const { rows } = await db.query(queryText);
+    res.status(200).json(rows);
+    console.log(`INFO: /api/pedidos (GET) - Se devolvieron ${rows.length} pedidos.`);
+  } catch (err) {
+    console.error("ERROR al obtener los pedidos:", err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al obtener los pedidos', details: err.message });
+  }
+});
+
+// READ: Obtener un pedido específico por ID (con sus items y detalles de productos)
+app.get('/api/pedidos/:id', async (req, res) => {
+  const { id } = req.params;
+  console.log(`INFO: Petición GET recibida en /api/pedidos/${id} desde ${req.ip}`);
+  try {
+    const queryText = `
+      SELECT 
+        p.id as pedido_id, 
+        p.mesa_id, 
+        m.numero_mesa,
+        p.estado, 
+        p.total_pedido,
+        p.notas_cliente,
+        p.created_at as pedido_creado_en,
+        p.updated_at as pedido_actualizado_en,
+        json_agg(
+          json_build_object(
+            'item_id', ip.id,
+            'producto_id', ip.producto_id,
+            'nombre_producto', prod.nombre,
+            'descripcion_producto', prod.descripcion,
+            'categoria_producto', prod.categoria,
+            'cantidad', ip.cantidad,
+            'precio_unitario_en_pedido', ip.precio_unitario_en_pedido,
+            'subtotal', ip.subtotal,
+            'notas_item', ip.notas_item
+          ) ORDER BY prod.nombre ASC
+        ) FILTER (WHERE ip.id IS NOT NULL) as items
+      FROM pedidos p
+      LEFT JOIN mesas m ON p.mesa_id = m.id
+      LEFT JOIN items_pedido ip ON p.id = ip.pedido_id
+      LEFT JOIN productos prod ON ip.producto_id = prod.id
+      WHERE p.id = $1
+      GROUP BY p.id, m.numero_mesa;
+    `;
+    const { rows } = await db.query(queryText, [id]);
+    if (rows.length === 0) {
+      console.warn(`WARN: /api/pedidos/${id} (GET) - Pedido no encontrado.`);
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+    res.status(200).json(rows[0]);
+    console.log(`INFO: /api/pedidos/${id} (GET) - Pedido encontrado y devuelto.`);
+  } catch (err) {
+    console.error(`ERROR al obtener el pedido con ID ${id}:`, err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al obtener el pedido', details: err.message });
+  }
+});
+
+// UPDATE: Actualizar el estado de un pedido por ID
+app.put('/api/pedidos/:id/estado', async (req, res) => {
+  const { id } = req.params;
+  const { estado } = req.body;
+  console.log(`INFO: Petición PUT recibida en /api/pedidos/${id}/estado desde ${req.ip} con body:`, req.body);
+
+  if (!estado) {
+    return res.status(400).json({ error: 'El campo estado es obligatorio.' });
+  }
+  // Podrías añadir validación para asegurar que 'estado' sea uno de los valores permitidos
+
+  try {
+    // Si tienes el trigger para 'updated_at' en la tabla 'pedidos', no necesitas incluirlo aquí.
+    // Si no, añade: ", updated_at = CURRENT_TIMESTAMP"
+    const queryText = `
+      UPDATE pedidos 
+      SET estado = $1 
+      WHERE id = $2 
+      RETURNING *;
+    `;
+    const { rows } = await db.query(queryText, [estado, id]);
+    
+    if (rows.length === 0) {
+      console.warn(`WARN: /api/pedidos/${id}/estado (PUT) - Pedido no encontrado para actualizar estado.`);
+      return res.status(404).json({ error: 'Pedido no encontrado para actualizar estado' });
+    }
+
+    // (Más adelante) Emitir evento Socket.IO
+    // io.emit('actualizacion_estado_pedido', rows[0]);
+    
+    res.status(200).json(rows[0]);
+    console.log(`INFO: /api/pedidos/${id}/estado (PUT) - Estado del pedido actualizado a: ${estado}`);
+  } catch (err) {
+    console.error(`ERROR al actualizar estado del pedido con ID ${id}:`, err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al actualizar estado del pedido', details: err.message });
+  }
+});
+
+console.log("INFO: Rutas CRUD para pedidos configuradas.");
 
 // --- Lógica de Socket.IO ---
 console.log("INFO: Configurando Socket.IO...");

@@ -228,7 +228,7 @@ console.log("INFO: Configurando rutas CRUD para mesas...");
 // CREATE: Añadir una nueva mesa
 app.post('/api/mesas', async (req, res) => {
   console.log(`INFO: Petición POST recibida en /api/mesas desde ${req.ip} con body:`, req.body);
-  const { numero_mesa, descripcion, capacidad, activa } = req.body;
+  const { numero_mesa, descripcion, activa } = req.body;
 
   if (numero_mesa === undefined || numero_mesa === null) {
     console.warn("WARN: /api/mesas (POST) - Falta numero_mesa");
@@ -241,14 +241,13 @@ app.post('/api/mesas', async (req, res) => {
 
   try {
     const queryText = `
-      INSERT INTO mesas (numero_mesa, descripcion, capacidad, activa) 
+      INSERT INTO mesas (numero_mesa, descripcion, activa) 
       VALUES ($1, $2, $3, $4) 
       RETURNING *;
     `;
     const values = [
       parseInt(numero_mesa),
       descripcion,
-      capacidad === undefined ? 2 : parseInt(capacidad),
       activa === undefined ? true : activa
     ];
     
@@ -299,7 +298,7 @@ app.get('/api/mesas/:id', async (req, res) => {
 app.put('/api/mesas/:id', async (req, res) => {
   const { id } = req.params;
   console.log(`INFO: Petición PUT recibida en /api/mesas/${id} desde ${req.ip} con body:`, req.body);
-  const { numero_mesa, descripcion, capacidad, activa } = req.body;
+  const { numero_mesa, descripcion, activa } = req.body;
 
   if (numero_mesa === undefined || numero_mesa === null) {
     console.warn(`WARN: /api/mesas/${id} (PUT) - Falta numero_mesa`);
@@ -316,16 +315,14 @@ app.put('/api/mesas/:id', async (req, res) => {
       SET 
         numero_mesa = $1, 
         descripcion = $2, 
-        capacidad = $3, 
-        activa = $4
+        activa = $3
         -- Si NO tienes el trigger 'set_timestamp_mesas', añade: , updated_at = CURRENT_TIMESTAMP 
-      WHERE id = $5 
+      WHERE id = $4 
       RETURNING *;
     `;
     const values = [
         parseInt(numero_mesa), 
         descripcion, 
-        capacidad === undefined ? null : parseInt(capacidad),
         activa === undefined ? true : activa, // Default a true si no se especifica para 'activa'
         id
     ];

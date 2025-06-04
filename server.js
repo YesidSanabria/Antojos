@@ -183,6 +183,134 @@ app.delete('/api/productos/:id', async (req, res) => {
   }
 });
 
+
+// --- CRUD para Mesas ---
+
+// CREATE: Añadir una nueva mesa
+app.post('/api/mesas', async (req, res) => {
+  const { numero_mesa, descripcion, activa } = req.body;
+
+  if (numero_mesa === undefined || numero_mesa === null) {
+    return res.status(400).json({ error: 'El campo numero_mesa es obligatorio.' });
+  }
+  if (isNaN(parseInt(numero_mesa))) {
+    return res.status(400).json({ error: 'El campo numero_mesa debe ser un número.' });
+  }
+
+  try {
+    const queryText = `
+      INSERT INTO mesas (numero_mesa, descripcion, activa) 
+      VALUES ($1, $2, $3) 
+      RETURNING *;
+    `;
+    const values = [
+      parseInt(numero_mesa),
+      descripcion,
+      activa === undefined ? true : activa // Valor por defecto para activa si no se provee
+    ];
+    
+    const { rows } = await db.query(queryText, values);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error("Error al crear la mesa:", err.stack);
+    if (err.code === '23505' && err.constraint === 'mesas_numero_mesa_key') { // '23505' es violación de unicidad
+      return res.status(409).json({ error: 'Ya existe una mesa con ese número.' }); // 409 Conflicto
+    }
+    res.status(500).json({ error: 'Error interno del servidor al crear la mesa', details: err.message });
+  }
+});
+
+// READ: Obtener todas las mesas
+app.get('/api/mesas', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM mesas ORDER BY numero_mesa ASC');
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error("Error al obtener las mesas:", err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al obtener las mesas', details: err.message });
+  }
+});
+
+// READ: Obtener una mesa por ID
+app.get('/api/mesas/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await db.query('SELECT * FROM mesas WHERE id = $1', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Mesa no encontrada' });
+    }
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    console.error(`Error al obtener la mesa con ID ${id}:`, err.stack);
+    res.status(500).json({ error: 'Error interno del servidor al obtener la mesa', details: err.message });
+  }
+});
+
+// UPDATE: Actualizar una mesa existente por ID
+app.put('/api/mesas/:id', async (req, res) => {
+  const { id } = req.params;
+  const { numero_mesa, descripcion, activa } = req.body;
+
+  if (numero_mesa === undefined || numero_mesa === null) {
+    return res.status(400).json({ error: 'El campo numero_mesa es obligatorio para la actualización.' });
+  }
+   if (isNaN(parseInt(numero_mesa))) {
+    return res.status(400).json({ error: 'El campo numero_mesa debe ser un número.' });
+  }
+
+  try {
+    const queryText = `
+      UPDATE mesas 
+      SET 
+        numero_mesa = $1, 
+        descripcion = $2, 
+        activa = $3
+        -- Si NO tiene el trigger 'set_timestamp_mesas', añade la siguiente línea:
+        -- , updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $4 
+      RETURNING *;
+    `;
+    const values = [
+        parseInt(numero_mesa), 
+        descripcion, 
+        activa === undefined ? null : activa, // Permite null si se quiere quitar el estado (aunque la tabla tiene default)
+        id
+    ];
+    
+    const { rows } = await db.query(queryText, values);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Mesa no encontrada para actualizar' });
+    }
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    console.error(`Error al actualizar la mesa con ID ${id}:`, err.stack);
+    if (err.code === '23505' && err.constraint === 'mesas_numero_mesa_key') {
+      return res.status(409).json({ error: 'Ya existe otra mesa con ese número.' });
+    }
+    res.status(500).json({ error: 'Error interno del servidor al actualizar la mesa', details: err.message });
+  }
+});
+
+// DELETE: Eliminar una mesa por ID
+app.delete('/api/mesas/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await db.query('DELETE FROM mesas WHERE id = $1 RETURNING *', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Mesa no encontrada para eliminar' });
+    }
+    res.status(204).send(); // 204 No Content es apropiado
+  } catch (err) {
+    console.error(`Error al eliminar la mesa con ID ${id}:`, err.stack);
+    // Podría haber otros tipos de errores de FK si otras tablas referencian 'mesas' con ON DELETE RESTRICT
+    res.status(500).json({ error: 'Error interno del servidor al eliminar la mesa', details: err.message });
+  }
+});
+
+
+
+
 // --- Lógica de Socket.IO ---
 io.on('connection', (socket) => {
   console.log(`Un cliente se ha conectado: ${socket.id}`);

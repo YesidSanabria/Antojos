@@ -1,0 +1,37 @@
+# .dockerignore
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Archivos de entorno local (estos se configuran en la plataforma de despliegue)
+.env
+.env.*
+!.env.example
+
+# Dependencias (se instalan dentro del contenedor)
+node_modules
+jspm_packages/
+
+# Archivos del sistema operativo y editores
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Archivos de Git
+.git
+.gitignore
+
+# Archivos de Docker
+Dockerfile
+.dockerignore
+
+# Otros archivos de desarrollo o builds locales
+dist/
+build/

@@ -1,27 +1,30 @@
 // server.js (Raíz del proyecto)
+console.log(`LOG INICIO APP: server.js ejecutándose a las ${new Date().toISOString()}`);
 const path = require('path');
 
 if (process.env.NODE_ENV !== 'production') {
   console.log("INFO: Cargando variables de entorno desde .env (desarrollo local)");
+  // Asegúrate que la ruta a .env sea correcta si no está en la raíz con server.js
+  // Si server.js está en la raíz del proyecto, y .env también, esto está bien.
   require('dotenv').config();
 } else {
   console.log("INFO: Entorno de producción detectado, no se carga .env");
 }
 
-console.log("INFO: Iniciando aplicación...");
-console.log("INFO: NODE_ENV =", process.env.NODE_ENV);
-console.log("INFO: PORT (antes de db) =", process.env.PORT); // Ver qué puerto tenemos aquí
-console.log("INFO: DATABASE_URL (antes de db) =", process.env.DATABASE_URL ? "DATABASE_URL está presente" : "DATABASE_URL NO está presente");
-console.log("INFO: FRONTEND_URL (antes de db) =", process.env.FRONTEND_URL);
-
+console.log("--- VARIABLES DE ENTORNO RECIBIDAS ---");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("PORT (variable de entorno cruda):", process.env.PORT);
+console.log("DATABASE_URL:", process.env.DATABASE_URL ? "DATABASE_URL está presente" : "DATABASE_URL NO está presente");
+console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
+console.log("------------------------------------");
 
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 
-console.log("INFO: Importando módulo de base de datos...");
-const db = require('./db/database'); // Importa tu módulo de base de datos
+console.log("INFO: Importando módulo de base de datos (db/database.js)...");
+const db = require('./db/database'); // Asume que db/database.js está en la misma raíz
 console.log("INFO: Módulo de base de datos importado.");
 
 const app = express();
@@ -32,7 +35,6 @@ const corsOptions = {
   methods: ["GET", "POST", "PUT", "DELETE"]
 };
 console.log("INFO: Opciones de CORS configuradas:", JSON.stringify(corsOptions));
-
 
 const io = new Server(server, {
   cors: corsOptions
@@ -48,18 +50,17 @@ console.log("INFO: Middleware express.json aplicado.");
 app.use(express.urlencoded({ extended: true }));
 console.log("INFO: Middleware express.urlencoded aplicado.");
 
-
 // --- Rutas de API ---
 console.log("INFO: Configurando rutas de API...");
 
 // Ruta de salud
 app.get('/api/health', (req, res) => {
-  console.log(`INFO: Petición GET recibida en /api/health desde ${req.ip}`);
+  console.log(`HEALTH CHECK: Petición GET recibida en /api/health a las ${new Date().toISOString()} desde ${req.ip}`);
   try {
-    res.status(200).json({ status: "UP", message: "El servidor backend está saludable!" });
-    console.log("INFO: /api/health respondió 200 OK");
+    res.status(200).json({ status: "UP", message: "El servidor backend está saludable y esta ruta fue alcanzada!" });
+    console.log("HEALTH CHECK: /api/health respondió 200 OK");
   } catch (e) {
-    console.error("ERROR en /api/health:", e.stack);
+    console.error("HEALTH CHECK ERROR en /api/health:", e.stack);
     res.status(500).json({ status: "DOWN", error: "Error en health check", details: e.message });
   }
 });
@@ -85,15 +86,14 @@ app.get('/api/db-test', async (req, res) => {
 });
 console.log("INFO: Ruta /api/db-test configurada.");
 
-// --- CRUD para Productos ---
-// (Tu código CRUD para productos aquí, puedes añadir console.log similares dentro de cada ruta si quieres)
-console.log("INFO: Rutas CRUD para productos configuradas.");
+// --- CRUD para Productos (sin imagen_url) ---
+console.log("INFO: Configurando rutas CRUD para productos...");
 // CREATE: Añadir un nuevo producto
 app.post('/api/productos', async (req, res) => {
-  console.log(`INFO: Petición POST recibida en /api/productos desde ${req.ip}`);
+  console.log(`INFO: Petición POST recibida en /api/productos desde ${req.ip} con body:`, req.body);
   const { nombre, descripcion, precio, categoria, disponible, stock_quantity } = req.body;
   if (!nombre || precio === undefined) {
-    console.warn("WARN: /api/productos - Faltan campos obligatorios (nombre o precio)");
+    console.warn("WARN: /api/productos (POST) - Faltan campos obligatorios (nombre o precio)");
     return res.status(400).json({ error: 'Los campos nombre y precio son obligatorios.' });
   }
   try {
@@ -112,7 +112,7 @@ app.post('/api/productos', async (req, res) => {
     ];
     const { rows } = await db.query(queryText, values);
     res.status(201).json(rows[0]);
-    console.log("INFO: /api/productos - Producto creado:", rows[0].id);
+    console.log("INFO: /api/productos (POST) - Producto creado:", rows[0].id);
   } catch (err) {
     console.error("ERROR al crear el producto:", err.stack);
     if (err.code === '23505' && err.constraint === 'productos_nombre_key') {
@@ -128,7 +128,7 @@ app.get('/api/productos', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM productos ORDER BY nombre ASC');
     res.status(200).json(rows);
-    console.log(`INFO: /api/productos - Se devolvieron ${rows.length} productos.`);
+    console.log(`INFO: /api/productos (GET) - Se devolvieron ${rows.length} productos.`);
   } catch (err) {
     console.error("ERROR al obtener productos:", err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener productos', details: err.message });
@@ -142,11 +142,11 @@ app.get('/api/productos/:id', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM productos WHERE id = $1', [id]);
     if (rows.length === 0) {
-      console.warn(`WARN: /api/productos/${id} - Producto no encontrado.`);
+      console.warn(`WARN: /api/productos/${id} (GET) - Producto no encontrado.`);
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
     res.status(200).json(rows[0]);
-    console.log(`INFO: /api/productos/${id} - Producto encontrado y devuelto.`);
+    console.log(`INFO: /api/productos/${id} (GET) - Producto encontrado y devuelto.`);
   } catch (err) {
     console.error(`ERROR al obtener el producto con ID ${id}:`, err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener el producto', details: err.message });
@@ -156,7 +156,7 @@ app.get('/api/productos/:id', async (req, res) => {
 // UPDATE: Actualizar un producto existente por ID
 app.put('/api/productos/:id', async (req, res) => {
   const { id } = req.params;
-  console.log(`INFO: Petición PUT recibida en /api/productos/${id} desde ${req.ip}`);
+  console.log(`INFO: Petición PUT recibida en /api/productos/${id} desde ${req.ip} con body:`, req.body);
   const { nombre, descripcion, precio, categoria, disponible, stock_quantity } = req.body;
   if (!nombre || precio === undefined) {
     console.warn(`WARN: /api/productos/${id} (PUT) - Faltan campos obligatorios (nombre o precio)`);
@@ -221,22 +221,21 @@ app.delete('/api/productos/:id', async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor al eliminar el producto', details: err.message });
   }
 });
-
+console.log("INFO: Rutas CRUD para productos configuradas.");
 
 // --- CRUD para Mesas ---
-// (Tu código CRUD para mesas aquí, puedes añadir console.log similares)
-console.log("INFO: Rutas CRUD para mesas configuradas.");
+console.log("INFO: Configurando rutas CRUD para mesas...");
 // CREATE: Añadir una nueva mesa
 app.post('/api/mesas', async (req, res) => {
-  console.log(`INFO: Petición POST recibida en /api/mesas desde ${req.ip}`);
+  console.log(`INFO: Petición POST recibida en /api/mesas desde ${req.ip} con body:`, req.body);
   const { numero_mesa, descripcion, capacidad, activa } = req.body;
 
   if (numero_mesa === undefined || numero_mesa === null) {
-    console.warn("WARN: /api/mesas - Falta numero_mesa");
+    console.warn("WARN: /api/mesas (POST) - Falta numero_mesa");
     return res.status(400).json({ error: 'El campo numero_mesa es obligatorio.' });
   }
   if (isNaN(parseInt(numero_mesa))) {
-    console.warn("WARN: /api/mesas - numero_mesa no es un número");
+    console.warn("WARN: /api/mesas (POST) - numero_mesa no es un número");
     return res.status(400).json({ error: 'El campo numero_mesa debe ser un número.' });
   }
 
@@ -255,7 +254,7 @@ app.post('/api/mesas', async (req, res) => {
     
     const { rows } = await db.query(queryText, values);
     res.status(201).json(rows[0]);
-    console.log("INFO: /api/mesas - Mesa creada:", rows[0].id);
+    console.log("INFO: /api/mesas (POST) - Mesa creada:", rows[0].id);
   } catch (err) {
     console.error("ERROR al crear la mesa:", err.stack);
     if (err.code === '23505' && err.constraint === 'mesas_numero_mesa_key') {
@@ -271,7 +270,7 @@ app.get('/api/mesas', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM mesas ORDER BY numero_mesa ASC');
     res.status(200).json(rows);
-    console.log(`INFO: /api/mesas - Se devolvieron ${rows.length} mesas.`);
+    console.log(`INFO: /api/mesas (GET) - Se devolvieron ${rows.length} mesas.`);
   } catch (err) {
     console.error("ERROR al obtener las mesas:", err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener las mesas', details: err.message });
@@ -285,11 +284,11 @@ app.get('/api/mesas/:id', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM mesas WHERE id = $1', [id]);
     if (rows.length === 0) {
-      console.warn(`WARN: /api/mesas/${id} - Mesa no encontrada.`);
+      console.warn(`WARN: /api/mesas/${id} (GET) - Mesa no encontrada.`);
       return res.status(404).json({ error: 'Mesa no encontrada' });
     }
     res.status(200).json(rows[0]);
-    console.log(`INFO: /api/mesas/${id} - Mesa encontrada y devuelta.`);
+    console.log(`INFO: /api/mesas/${id} (GET) - Mesa encontrada y devuelta.`);
   } catch (err) {
     console.error(`ERROR al obtener la mesa con ID ${id}:`, err.stack);
     res.status(500).json({ error: 'Error interno del servidor al obtener la mesa', details: err.message });
@@ -299,7 +298,7 @@ app.get('/api/mesas/:id', async (req, res) => {
 // UPDATE: Actualizar una mesa existente por ID
 app.put('/api/mesas/:id', async (req, res) => {
   const { id } = req.params;
-  console.log(`INFO: Petición PUT recibida en /api/mesas/${id} desde ${req.ip}`);
+  console.log(`INFO: Petición PUT recibida en /api/mesas/${id} desde ${req.ip} con body:`, req.body);
   const { numero_mesa, descripcion, capacidad, activa } = req.body;
 
   if (numero_mesa === undefined || numero_mesa === null) {
@@ -327,7 +326,7 @@ app.put('/api/mesas/:id', async (req, res) => {
         parseInt(numero_mesa), 
         descripcion, 
         capacidad === undefined ? null : parseInt(capacidad),
-        activa === undefined ? null : activa,
+        activa === undefined ? true : activa, // Default a true si no se especifica para 'activa'
         id
     ];
     
@@ -365,6 +364,7 @@ app.delete('/api/mesas/:id', async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor al eliminar la mesa', details: err.message });
   }
 });
+console.log("INFO: Rutas CRUD para mesas configuradas.");
 
 
 // --- Lógica de Socket.IO ---
@@ -377,31 +377,31 @@ io.on('connection', (socket) => {
   });
 
   socket.on('mensajeDesdeCliente', (data) => {
-    console.log(`INFO: Mensaje Socket.IO recibido de ${socket.id}:`, data);
-    socket.emit('respuestaDesdeServidor', { reply: 'Mensaje recibido correctamente!' });
+    console.log(`INFO: Mensaje Socket.IO recibido de ${socket.id}:`, JSON.stringify(data));
+    socket.emit('respuestaDesdeServidor', { reply: 'Mensaje recibido correctamente por el servidor!' });
   });
 });
 console.log("INFO: Socket.IO configurado.");
 
 
 // --- Iniciar el servidor ---
-const PORT = process.env.PORT || 3001; // App Runner establece process.env.PORT
-console.log(`INFO: Intentando iniciar servidor en el puerto ${PORT}...`);
+const PORT_APP = process.env.PORT || 3001; // App Runner establece process.env.PORT
+console.log(`INFO: Variable PORT de entorno es: ${process.env.PORT}. Usando puerto: ${PORT_APP}`);
 
-server.listen(PORT, () => {
-  console.log(`SUCCESS: Servidor backend corriendo en el puerto ${PORT}`);
+server.listen(PORT_APP, () => {
+  console.log(`SUCCESS: Servidor backend corriendo en el puerto ${PORT_APP}`);
   console.log(`INFO: Health check disponible en /api/health`);
   console.log(`INFO: DB test disponible en /api/db-test`);
 });
 
-// Manejo de errores no capturados (opcional pero buena práctica)
-process.on('uncaughtException', (error) => {
-  console.error('FATAL: Excepción no capturada:', error.stack || error);
-  // Considera cerrar el servidor de forma elegante aquí y salir del proceso
+// Manejo de errores no capturados
+process.on('uncaughtException', (error, origin) => {
+  console.error(`FATAL: Excepción no capturada en ${origin}:`, error.stack || error);
+  // En un entorno de producción real, podrías querer cerrar el servidor de forma elegante
+  // y permitir que el orquestador de contenedores (como App Runner) reinicie el servicio.
   // process.exit(1); 
 });
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('FATAL: Promesa rechazada no manejada:', reason.stack || reason);
-  // Considera cerrar el servidor de forma elegante aquí y salir del proceso
+  console.error('FATAL: Promesa rechazada no manejada en:', promise, 'razón:', reason.stack || reason);
   // process.exit(1);
 });

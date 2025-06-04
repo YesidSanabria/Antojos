@@ -1,9 +1,7 @@
 // backend/db/database.js
 const { Pool } = require('pg');
-const path = require('path'); // Para construir rutas de archivo de forma segura
+const path = require('path');
 
-// Carga las variables de entorno desde el archivo .env
-// SOLO si no estamos en un entorno de producción (como App Runner)
 if (process.env.NODE_ENV !== 'production') {
   console.log("INFO (db): Cargando variables de entorno desde .env (desarrollo local)");
   require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
@@ -12,19 +10,30 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 let poolConfig = {};
-let usingSsl = false; // Para saber si debemos añadir la opción SSL
 
 if (process.env.DATABASE_URL) {
-  console.log("INFO (db): Intentando conectar a la base de datos usando DATABASE_URL...");
+  console.log("INFO (db): Intentando conectar a la base de datos usando DATABASE_URL:", process.env.DATABASE_URL);
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
   };
-  // Verificar si la connectionString indica que se usará SSL
-  // RDS con ?sslmode=require o ?ssl=true lo necesitará.
-  if (process.env.DATABASE_URL.includes('sslmode=require') || process.env.DATABASE_URL.includes('ssl=true')) {
-    usingSsl = true;
+  
+  // Forzar la configuración SSL para RDS en producción o si la URL lo indica
+  // Simplificado: si hay DATABASE_URL y estamos en producción, aplicar la configuración SSL.
+  if (process.env.NODE_ENV === 'production') {
+    console.log("INFO (db): Entorno de producción y DATABASE_URL presente. Configurando SSL con rejectUnauthorized: false.");
+    poolConfig.ssl = {
+      rejectUnauthorized: false
+    };
+  } else if (process.env.DATABASE_URL.includes('sslmode=require') || process.env.DATABASE_URL.includes('ssl=true')) {
+    // Para desarrollo local si la URL lo especifica
+    console.log("INFO (db): DATABASE_URL indica SSL. Configurando SSL con rejectUnauthorized: false.");
+    poolConfig.ssl = {
+      rejectUnauthorized: false
+    };
   }
+
 } else if (process.env.PGHOST && process.env.PGUSER && process.env.PGDATABASE && process.env.PGPASSWORD && process.env.PGPORT) {
+  // ... (lógica para variables PG* individuales, también podría necesitar forzar SSL si PGHOST no es localhost)
   console.log("INFO (db): DATABASE_URL no encontrada. Intentando conectar con variables PG* individuales...");
   poolConfig = {
     host: process.env.PGHOST,
@@ -33,31 +42,22 @@ if (process.env.DATABASE_URL) {
     database: process.env.PGDATABASE,
     port: parseInt(process.env.PGPORT),
   };
-  // Aquí podrías añadir una variable de entorno explícita como PGSSLMODE=require
-  // o asumir que si no es localhost, probablemente necesite SSL.
-  // Por simplicidad, si no es localhost, asumiremos que podría necesitar SSL.
   if (process.env.PGHOST !== 'localhost') {
-    usingSsl = true; // Asumimos que las conexiones remotas a PG podrían necesitar SSL
+    console.log("INFO (db): PGHOST no es localhost. Configurando SSL con rejectUnauthorized: false.");
+    poolConfig.ssl = {
+      rejectUnauthorized: false
+    };
   }
 } else {
-  console.error("ERROR (db): No se encontraron variables de entorno para la conexión a la base de datos (ni DATABASE_URL ni el conjunto completo de PG*).");
+  console.error("ERROR (db): No se encontraron variables de entorno para la conexión a la base de datos.");
 }
 
-// Si se determinó que se usa SSL, añadir la opción para permitir certificados autofirmados (común para RDS)
-if (usingSsl) {
-  console.log("INFO (db): Configurando SSL con rejectUnauthorized: false para la conexión.");
-  poolConfig.ssl = {
-    rejectUnauthorized: false
-  };
-}
-
-// Solo crea el pool si tenemos una configuración válida
 let pool;
-if (Object.keys(poolConfig).length > 0 && poolConfig.connectionString || (poolConfig.host && poolConfig.user && poolConfig.database && poolConfig.password && poolConfig.port)) {
+if (Object.keys(poolConfig).length > 0 && (poolConfig.connectionString || (poolConfig.host && poolConfig.user))) {
   try {
+    console.log("INFO (db): Inicializando Pool con la configuración:", JSON.stringify(poolConfig, (key, value) => key === 'password' || key === 'connectionString' && typeof value === 'string' && value.includes('postgres://') ? (value.includes('@') ? value.substring(0, value.indexOf(':', value.indexOf('//') + 3)+1) + '********' + value.substring(value.indexOf('@')) : '********') : value, 2));
     pool = new Pool(poolConfig);
 
-    // Prueba de conexión y consulta
     pool.query('SELECT NOW()')
       .then(res => {
         if (res.rows && res.rows[0]) {
@@ -68,6 +68,7 @@ if (Object.keys(poolConfig).length > 0 && poolConfig.connectionString || (poolCo
       })
       .catch(err => {
         console.error('ERROR (db): Falló la conexión de prueba a PostgreSQL o la consulta inicial.');
+        console.error("DETALLES DEL ERROR DE CONEXIÓN:", err); // Imprimir el objeto de error completo
         console.error(err.stack);
       });
   } catch (initError) {

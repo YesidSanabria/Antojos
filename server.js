@@ -242,7 +242,7 @@ app.post('/api/mesas', async (req, res) => {
   try {
     const queryText = `
       INSERT INTO mesas (numero_mesa, descripcion, activa) 
-      VALUES ($1, $2, $3, $4) 
+      VALUES ($1, $2, $3) 
       RETURNING *;
     `;
     const values = [
@@ -316,7 +316,7 @@ app.put('/api/mesas/:id', async (req, res) => {
         numero_mesa = $1, 
         descripcion = $2, 
         activa = $3
-        -- Si NO tienes el trigger 'set_timestamp_mesas', añade: , updated_at = CURRENT_TIMESTAMP 
+        -- Si NO tiene el trigger 'set_timestamp_mesas', añade: , updated_at = CURRENT_TIMESTAMP 
       WHERE id = $4 
       RETURNING *;
     `;

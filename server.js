@@ -4,9 +4,7 @@ const path = require('path');
 
 if (process.env.NODE_ENV !== 'production') {
   console.log("INFO: Cargando variables de entorno desde .env (desarrollo local)");
-  // Asegúrate que la ruta a .env sea correcta si no está en la raíz con server.js
-  // Si server.js está en la raíz del proyecto, y .env también, esto está bien.
-  require('dotenv').config();
+  require('dotenv').config(); // Asume que .env está en la misma raíz que server.js
 } else {
   console.log("INFO: Entorno de producción detectado, no se carga .env");
 }
@@ -31,7 +29,7 @@ const app = express();
 const server = http.createServer(app);
 
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: process.env.FRONTEND_URL || "http://localhost:5173", // O el puerto de tu frontend
   methods: ["GET", "POST", "PUT", "DELETE"]
 };
 console.log("INFO: Opciones de CORS configuradas:", JSON.stringify(corsOptions));
@@ -39,6 +37,7 @@ console.log("INFO: Opciones de CORS configuradas:", JSON.stringify(corsOptions))
 const io = new Server(server, {
   cors: corsOptions
 });
+console.log("INFO: Socket.IO Server inicializado.");
 
 // --- Middlewares de Express ---
 app.use(cors(corsOptions));
@@ -223,7 +222,7 @@ app.delete('/api/productos/:id', async (req, res) => {
 });
 console.log("INFO: Rutas CRUD para productos configuradas.");
 
-// --- CRUD para Mesas ---
+// --- CRUD para Mesas (sin capacidad) ---
 console.log("INFO: Configurando rutas CRUD para mesas...");
 // CREATE: Añadir una nueva mesa
 app.post('/api/mesas', async (req, res) => {
@@ -315,15 +314,15 @@ app.put('/api/mesas/:id', async (req, res) => {
       SET 
         numero_mesa = $1, 
         descripcion = $2, 
-        activa = $3
-        -- Si NO tiene el trigger 'set_timestamp_mesas', añade: , updated_at = CURRENT_TIMESTAMP 
+        activa = $3,
+        updated_at = CURRENT_TIMESTAMP 
       WHERE id = $4 
       RETURNING *;
-    `;
+    `; // Asegúrate de que tu trigger set_timestamp_mesas esté activo o mantén updated_at aquí
     const values = [
         parseInt(numero_mesa), 
         descripcion, 
-        activa === undefined ? true : activa, // Default a true si no se especifica para 'activa'
+        activa === undefined ? true : activa,
         id
     ];
     
@@ -365,52 +364,46 @@ console.log("INFO: Rutas CRUD para mesas configuradas.");
 
 // --- CRUD para Pedidos ---
 console.log("INFO: Configurando rutas CRUD para pedidos...");
-
 // CREATE: Registrar un nuevo pedido
 app.post('/api/pedidos', async (req, res) => {
   const { mesa_id, notas_cliente, items } = req.body;
-  console.log(`INFO: Petición POST recibida en /api/pedidos desde ${req.ip} con body:`, req.body);
+  console.log(`INFO (PEDIDO): Petición POST recibida en /api/pedidos desde ${req.ip} con body:`, req.body);
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'El pedido debe contener al menos un item.' });
   }
-
-  // Validar cada item
   for (const item of items) {
     if (!item.producto_id || !item.cantidad || parseInt(item.cantidad) <= 0) {
       return res.status(400).json({ error: 'Cada item debe tener un producto_id y una cantidad válida (mayor a 0).' });
     }
   }
 
-  const client = await db.getPool().connect(); // Obtener un cliente del pool para la transacción
+  const client = await db.getPool().connect();
+  console.log("INFO (PEDIDO): Cliente de BD conectado para transacción.");
 
   try {
-    await client.query('BEGIN'); // Iniciar transacción
+    await client.query('BEGIN');
+    console.log("INFO (PEDIDO): Transacción INICIADA.");
 
-    // 1. Insertar en la tabla 'pedidos'
     const pedidoQueryText = `
       INSERT INTO pedidos (mesa_id, estado, notas_cliente) 
       VALUES ($1, $2, $3) 
-      RETURNING id, estado, created_at;
+      RETURNING id, estado, created_at, mesa_id, notas_cliente;
     `;
-    // Estado inicial 'pendiente'
     const pedidoValues = [mesa_id ? parseInt(mesa_id) : null, 'pendiente', notas_cliente];
     const pedidoResult = await client.query(pedidoQueryText, pedidoValues);
-    const nuevoPedidoId = pedidoResult.rows[0].id;
+    const nuevoPedido = pedidoResult.rows[0];
+    const nuevoPedidoId = nuevoPedido.id;
     let totalPedidoCalculado = 0;
+    console.log(`INFO (PEDIDO): Pedido base creado con ID: ${nuevoPedidoId}`);
 
-    console.log(`INFO: Pedido base creado con ID: ${nuevoPedidoId}`);
-
-    // 2. Insertar cada item en 'items_pedido'
-    const itemsInsertados = [];
-    for (const item of items) {
-      // Obtener el precio actual del producto
+    const itemsInsertadosPromesas = items.map(async (item) => {
       const productoResult = await client.query('SELECT precio, nombre FROM productos WHERE id = $1 AND disponible = TRUE', [item.producto_id]);
       if (productoResult.rows.length === 0) {
         throw new Error(`Producto con ID ${item.producto_id} no encontrado o no disponible.`);
       }
       const precioUnitario = parseFloat(productoResult.rows[0].precio);
-      const nombreProducto = productoResult.rows[0].nombre; // Para la respuesta
+      const nombreProducto = productoResult.rows[0].nombre;
       const cantidad = parseInt(item.cantidad);
       const subtotal = cantidad * precioUnitario;
       totalPedidoCalculado += subtotal;
@@ -418,42 +411,40 @@ app.post('/api/pedidos', async (req, res) => {
       const itemQueryText = `
         INSERT INTO items_pedido (pedido_id, producto_id, cantidad, precio_unitario_en_pedido, subtotal, notas_item)
         VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *;
+        RETURNING id, producto_id, cantidad, precio_unitario_en_pedido, subtotal, notas_item;
       `;
       const itemValues = [nuevoPedidoId, item.producto_id, cantidad, precioUnitario, subtotal, item.notas_item];
       const itemResult = await client.query(itemQueryText, itemValues);
-      itemsInsertados.push({
-          ...itemResult.rows[0],
-          nombre_producto: nombreProducto // Añadir nombre para la respuesta
-      });
-      console.log(`INFO: Item insertado para pedido ID ${nuevoPedidoId}: producto ID ${item.producto_id}, cantidad ${cantidad}`);
-    }
-
-    // 3. (Opcional pero recomendado) Actualizar el total_pedido en la tabla 'pedidos'
-    await client.query('UPDATE pedidos SET total_pedido = $1 WHERE id = $2', [totalPedidoCalculado, nuevoPedidoId]);
-    console.log(`INFO: Total del pedido ID ${nuevoPedidoId} actualizado a: ${totalPedidoCalculado}`);
-
-    await client.query('COMMIT'); // Confirmar transacción
-
-    // (Más adelante) Emitir evento Socket.IO
-    // io.emit('nuevo_pedido_cocina', { ...pedidoResult.rows[0], id: nuevoPedidoId, total_pedido: totalPedidoCalculado, items: itemsInsertados });
-
-    res.status(201).json({ 
-        ...pedidoResult.rows[0], 
-        id: nuevoPedidoId, 
-        mesa_id: mesa_id ? parseInt(mesa_id) : null,
-        notas_cliente: notas_cliente,
-        total_pedido: totalPedidoCalculado, 
-        items: itemsInsertados 
+      console.log(`INFO (PEDIDO): Item insertado para pedido ID ${nuevoPedidoId}: producto ID ${item.producto_id}`);
+      return { ...itemResult.rows[0], nombre_producto: nombreProducto };
     });
 
+    const itemsCompletos = await Promise.all(itemsInsertadosPromesas);
+
+    await client.query('UPDATE pedidos SET total_pedido = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [totalPedidoCalculado, nuevoPedidoId]);
+    console.log(`INFO (PEDIDO): Total del pedido ID ${nuevoPedidoId} actualizado a: ${totalPedidoCalculado}`);
+
+    await client.query('COMMIT');
+    console.log("INFO (PEDIDO): Transacción COMPLETADA (COMMIT).");
+
+    const pedidoParaEmitirYResponder = {
+        ...nuevoPedido,
+        total_pedido: totalPedidoCalculado,
+        items: itemsCompletos
+    };
+    
+    io.emit('nuevo_pedido_cocina', pedidoParaEmitirYResponder);
+    console.log(`INFO (SOCKET): Evento 'nuevo_pedido_cocina' emitido para pedido ID ${nuevoPedidoId}`);
+
+    res.status(201).json(pedidoParaEmitirYResponder);
+
   } catch (err) {
-    await client.query('ROLLBACK'); // Revertir transacción en caso de error
-    console.error("ERROR al crear el pedido (transacción revertida):", err.stack);
+    await client.query('ROLLBACK');
+    console.error("ERROR (PEDIDO): Error al crear el pedido (transacción REVERTIDA):", err.stack);
     res.status(500).json({ error: 'Error interno del servidor al crear el pedido', details: err.message });
   } finally {
-    client.release(); // Liberar el cliente de vuelta al pool
-    console.log("INFO: Cliente de base de datos liberado.");
+    client.release();
+    console.log("INFO (PEDIDO): Cliente de BD liberado.");
   }
 });
 
@@ -461,7 +452,6 @@ app.post('/api/pedidos', async (req, res) => {
 app.get('/api/pedidos', async (req, res) => {
   console.log(`INFO: Petición GET recibida en /api/pedidos desde ${req.ip}`);
   try {
-    // Esta consulta es más compleja para traer los datos relacionados
     const queryText = `
       SELECT 
         p.id as pedido_id, 
@@ -471,6 +461,7 @@ app.get('/api/pedidos', async (req, res) => {
         p.total_pedido,
         p.notas_cliente,
         p.created_at as pedido_creado_en,
+        p.updated_at as pedido_actualizado_en,
         json_agg(
           json_build_object(
             'item_id', ip.id,
@@ -481,7 +472,7 @@ app.get('/api/pedidos', async (req, res) => {
             'subtotal', ip.subtotal,
             'notas_item', ip.notas_item
           ) ORDER BY prod.nombre ASC
-        ) FILTER (WHERE ip.id IS NOT NULL) as items -- Usar FILTER para manejar pedidos sin items (aunque no debería pasar con la lógica de creación)
+        ) FILTER (WHERE ip.id IS NOT NULL) as items
       FROM pedidos p
       LEFT JOIN mesas m ON p.mesa_id = m.id
       LEFT JOIN items_pedido ip ON p.id = ip.pedido_id
@@ -550,61 +541,76 @@ app.get('/api/pedidos/:id', async (req, res) => {
 app.put('/api/pedidos/:id/estado', async (req, res) => {
   const { id } = req.params;
   const { estado } = req.body;
-  console.log(`INFO: Petición PUT recibida en /api/pedidos/${id}/estado desde ${req.ip} con body:`, req.body);
+  console.log(`INFO (PEDIDO): Petición PUT recibida en /api/pedidos/${id}/estado desde ${req.ip} con body:`, req.body);
 
   if (!estado) {
     return res.status(400).json({ error: 'El campo estado es obligatorio.' });
   }
-  // Podrías añadir validación para asegurar que 'estado' sea uno de los valores permitidos
 
   try {
-    // Si tienes el trigger para 'updated_at' en la tabla 'pedidos', no necesitas incluirlo aquí.
-    // Si no, añade: ", updated_at = CURRENT_TIMESTAMP"
     const queryText = `
       UPDATE pedidos 
-      SET estado = $1 
+      SET estado = $1, updated_at = CURRENT_TIMESTAMP 
       WHERE id = $2 
-      RETURNING *;
+      RETURNING *; 
     `;
     const { rows } = await db.query(queryText, [estado, id]);
     
     if (rows.length === 0) {
-      console.warn(`WARN: /api/pedidos/${id}/estado (PUT) - Pedido no encontrado para actualizar estado.`);
+      console.warn(`WARN: /api/pedidos/${id}/estado (PUT) - Pedido no encontrado.`);
       return res.status(404).json({ error: 'Pedido no encontrado para actualizar estado' });
     }
 
-    // (Más adelante) Emitir evento Socket.IO
-    // io.emit('actualizacion_estado_pedido', rows[0]);
+    const pedidoActualizado = rows[0];
+
+    const itemsQuery = `
+        SELECT 
+            ip.id as item_id, ip.producto_id, prod.nombre as nombre_producto, ip.cantidad, 
+            ip.precio_unitario_en_pedido, ip.subtotal, ip.notas_item
+        FROM items_pedido ip
+        JOIN productos prod ON ip.producto_id = prod.id
+        WHERE ip.pedido_id = $1
+        ORDER BY prod.nombre ASC;
+    `;
+    const itemsResult = await db.query(itemsQuery, [pedidoActualizado.id]);
+    const pedidoCompletoActualizado = { ...pedidoActualizado, items: itemsResult.rows };
     
-    res.status(200).json(rows[0]);
-    console.log(`INFO: /api/pedidos/${id}/estado (PUT) - Estado del pedido actualizado a: ${estado}`);
+    io.emit('actualizacion_estado_pedido', pedidoCompletoActualizado);
+    console.log(`INFO (SOCKET): Evento 'actualizacion_estado_pedido' emitido para pedido ID ${id}`);
+    
+    res.status(200).json(pedidoCompletoActualizado);
+    console.log(`INFO (PEDIDO): /api/pedidos/${id}/estado (PUT) - Estado del pedido actualizado a: ${estado}`);
   } catch (err) {
-    console.error(`ERROR al actualizar estado del pedido con ID ${id}:`, err.stack);
+    console.error(`ERROR (PEDIDO): Error al actualizar estado del pedido con ID ${id}:`, err.stack);
     res.status(500).json({ error: 'Error interno del servidor al actualizar estado del pedido', details: err.message });
   }
 });
-
 console.log("INFO: Rutas CRUD para pedidos configuradas.");
 
-// --- Lógica de Socket.IO ---
-console.log("INFO: Configurando Socket.IO...");
+// --- Lógica de Socket.IO (conexión base) ---
+console.log("INFO: Configurando listeners de Socket.IO...");
 io.on('connection', (socket) => {
-  console.log(`INFO: Cliente Socket.IO conectado: ${socket.id}`);
+  console.log(`INFO (SOCKET): Cliente Socket.IO conectado: ${socket.id}`);
+
+  socket.on('join_room', (roomName) => {
+    socket.join(roomName);
+    console.log(`INFO (SOCKET): Cliente ${socket.id} se unió a la sala ${roomName}`);
+  });
 
   socket.on('disconnect', () => {
-    console.log(`INFO: Cliente Socket.IO desconectado: ${socket.id}`);
+    console.log(`INFO (SOCKET): Cliente Socket.IO desconectado: ${socket.id}`);
   });
 
   socket.on('mensajeDesdeCliente', (data) => {
-    console.log(`INFO: Mensaje Socket.IO recibido de ${socket.id}:`, JSON.stringify(data));
-    socket.emit('respuestaDesdeServidor', { reply: 'Mensaje recibido correctamente por el servidor!' });
+    console.log(`INFO (SOCKET): Mensaje de prueba Socket.IO recibido de ${socket.id}:`, JSON.stringify(data));
+    socket.emit('respuestaDesdeServidor', { reply: 'Mensaje de prueba recibido correctamente por el servidor!' });
   });
 });
-console.log("INFO: Socket.IO configurado.");
+console.log("INFO: Listeners de Socket.IO configurados.");
 
 
 // --- Iniciar el servidor ---
-const PORT_APP = process.env.PORT || 3001; // App Runner establece process.env.PORT
+const PORT_APP = process.env.PORT || 3001;
 console.log(`INFO: Variable PORT de entorno es: ${process.env.PORT}. Usando puerto: ${PORT_APP}`);
 
 server.listen(PORT_APP, () => {
@@ -613,14 +619,9 @@ server.listen(PORT_APP, () => {
   console.log(`INFO: DB test disponible en /api/db-test`);
 });
 
-// Manejo de errores no capturados
 process.on('uncaughtException', (error, origin) => {
   console.error(`FATAL: Excepción no capturada en ${origin}:`, error.stack || error);
-  // En un entorno de producción real, podrías querer cerrar el servidor de forma elegante
-  // y permitir que el orquestador de contenedores (como App Runner) reinicie el servicio.
-  // process.exit(1); 
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('FATAL: Promesa rechazada no manejada en:', promise, 'razón:', reason.stack || reason);
-  // process.exit(1);
 });
